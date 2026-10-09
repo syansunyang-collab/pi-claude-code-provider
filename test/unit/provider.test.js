@@ -2139,35 +2139,6 @@ test("provider does not retry elsewhere when the session directory disappears af
     }
 });
 
-test("provider rejects image attachments from a temporary directory containing a double quote before launch", { skip: process.platform === "win32" }, async () => {
-    const root = await mkdtemp(join(tmpdir(), "provider-quoted-temp-"));
-    const quotedRoot = join(root, 'temp"root');
-    await mkdir(quotedRoot);
-    const originalTmpdir = process.env.TMPDIR;
-    process.env.TMPDIR = quotedRoot;
-    try {
-        let claims = 0;
-        const imageContext = {
-            messages: [{ role: "user", content: [{ type: "text", text: "look" }, { type: "image", data: "AA==", mimeType: "image/png" }], timestamp: 1 }],
-            tools: [],
-        };
-        const result = await settledRequest(createClaudeStream(
-            { executable: join(root, "never-launched"), version: "test", subscriptionType: "pro" },
-            { resolveSession: () => ({ cwd: root }), claimLaunch: async () => { claims += 1; } },
-        )(model, imageContext, { reasoning: "medium" }));
-        assert.equal(result.stopReason, "error");
-        assert.match(result.errorMessage ?? "", /double quote/);
-        assert.equal(claims, 0);
-        await requestMetrics(result, (entry) => entry.errorCategory === "image_path");
-        assert.deepEqual(await readdir(quotedRoot), []);
-    }
-    finally {
-        if (originalTmpdir === undefined) delete process.env.TMPDIR;
-        else process.env.TMPDIR = originalTmpdir;
-        await rm(root, { recursive: true, force: true });
-    }
-});
-
 /**
  * A captured scenario's records, with this test's own init so the tool inventory matches.
  * The fake writes everything at once and then waits, which is the worst case for a

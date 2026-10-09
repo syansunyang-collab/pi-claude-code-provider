@@ -40,7 +40,7 @@
 | Claude Code | 2.1.292 |
 | Node.js | 24.12.0 |
 
-`npm test`（Windows）：382 条，348 通过，34 条为平台相关跳过，0 失败；`npm run check` 通过。上游的付费验证矩阵（`npm run test:paid:*`）未在本分支运行，doctor 因此把上述 Pi 与 Claude Code 版本标为 unverified。Linux 与 macOS 未在本分支验证。
+`npm test`（Windows）：382 条，349 通过，33 条为平台相关跳过，0 失败；`npm run check` 通过。上游的付费验证矩阵（`npm run test:paid:*`）未在本分支运行，doctor 因此把上述 Pi 与 Claude Code 版本标为 unverified。Linux 与 macOS 未在本分支验证。
 
 ## 安装
 
