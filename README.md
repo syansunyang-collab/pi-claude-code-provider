@@ -1,6 +1,6 @@
 # pi-claude-code-provider（Windows 维护分支）
 
-本仓库是 [chem/pi-claude-code-provider](https://github.com/chem/pi-claude-code-provider) 的分支。上游在 2026-09-27 发布 v0.6.0 后归档，不再维护。本分支在 v0.6.0 基础上适配 Claude Code 2.1.292 与 Windows，保留原 MIT 许可证与作者署名。分割线以下为上游英文文档，安装地址与模型名已按本分支更新。
+本仓库是 [chem/pi-claude-code-provider](https://github.com/chem/pi-claude-code-provider) 的分支。上游在 2026-09-27 发布 v0.6.0 后归档，不再维护。本分支在 v0.6.0 基础上适配新版 Claude Code 与 Windows，验证版本见 [兼容基线](DEVELOPING.md#compatibility-baseline)，保留原 MIT 许可证与作者署名。分割线以下为上游英文文档，安装地址与模型名已按本分支更新。
 
 ## 使用边界
 
@@ -20,10 +20,10 @@
 
 | 改动 | 上游 v0.6.0 | 本分支 |
 | --- | --- | --- |
-| 图片传输 | 图片写入私有目录，在 prompt 末尾以 `@"路径"` 引用。Claude Code 2.1.292 对超过 256 KiB 的 `@` 文件既不附图也不报错；附件叙述排在整段记录之前，每加一张图都重写缓存前缀 | 图片以 base64 块经 stdin 发送，紧跟引用它的记录；缓存断点放在最后一条文本记录上。每次出现都计入 20 张、单张 20 MB、总计 100 MB 的限制 |
-| 内置插件隔离 | 2.1.292 在 print 模式默认加载 `cc-plugin-plugin-authoring`，初始化隔离检查报 `unexpected customizations`，所有请求失败 | `--settings` 中加入 `"plugin-authoring@builtin": false` |
+| 图片传输 | 图片写入私有目录，在 prompt 末尾以 `@"路径"` 引用。基线版本的 Claude Code 对超过 256 KiB 的 `@` 文件既不附图也不报错；附件叙述排在整段记录之前，每加一张图都重写缓存前缀 | 图片以 base64 块经 stdin 发送，紧跟引用它的记录；缓存断点放在最后一条文本记录上。每次出现都计入 20 张、单张 20 MB、总计 100 MB 的限制 |
+| 内置插件隔离 | 基线版本的 Claude Code 在 print 模式默认加载 `cc-plugin-plugin-authoring`，初始化隔离检查报 `unexpected customizations`，所有请求失败 | `--settings` 中加入 `"plugin-authoring@builtin": false` |
 | 摘要请求缓存 | Pi 对压缩、分支摘要传 `cacheRetention: "none"` 时，Claude Code 仍在尾部放 1h 断点，整段摘要写入缓存 | 这类请求给 Claude 子进程设 `DISABLE_PROMPT_CACHING=1`，缓存写入为 0；普通请求不受影响 |
-| 模型选择器 | 列出 `sonnet`、`fable`、`opus`、`haiku` 四个别名 | 列出别名在 2.1.292 中解析到的全名 `claude-sonnet-5-5`、`claude-fable-5-1`、`claude-opus-5-5`、`claude-haiku-4-5`；别名换到新型号时，doctor 提示 `picker still offers <旧 id>` |
+| 模型选择器 | 列出 `sonnet`、`fable`、`opus`、`haiku` 四个别名 | 列出别名在基线版本中解析到的全名 `claude-sonnet-5-5`、`claude-fable-5-1`、`claude-opus-5-5`、`claude-haiku-4-5`；别名换到新型号时，doctor 提示 `picker still offers <旧 id>` |
 | 会话图片目录 | 每个会话维护私有图片目录与请求租约 | 图片不再落盘，删除图片目录与租约代码。旧版本遗留的图片目录在 Linux 与 macOS 上由过期目录回收处理；Windows 不执行过期目录回收，遗留目录不会自动删除，需在确认旧版本 Pi 进程全部退出后，手动删除临时目录中的 `pi-claude-code-provider-images-*` |
 | 维护脚本 | `capture-claude-breakpoints.js`、`model-matrix.js` 按别名查型号表 | 随型号全名一起更新，避免启动即失败 |
 | doctor 类型检查 | 较新 Pi 的 `ProviderModelConfig` 为联合类型，读取 `contextWindow` 无法通过类型检查 | 增加类型判断 |
@@ -33,12 +33,7 @@
 
 ## 已验证环境
 
-| 项 | 版本 |
-| --- | --- |
-| 系统 | Windows 11 x64 |
-| Pi | 0.99.1 |
-| Claude Code | 2.1.292 |
-| Node.js | 24.12.0 |
+Pi 与 Claude Code 的验证版本见 [DEVELOPING.md 兼容基线](DEVELOPING.md#compatibility-baseline)。以下验证在 Windows 11 x64、Node.js 24.12.0 上完成。
 
 `npm test`（Windows）：382 条，349 通过，33 条为平台相关跳过，0 失败；`npm run check` 通过。付费验证（`npm run test:paid:*`，2026-10-09，提交 `696d473`，Max 订阅）：全部 15 个阶段通过，共 57 次 Claude 启动。
 
@@ -48,10 +43,10 @@
 | `cache`、`cache-haiku` | 第 2、3 轮缓存命中：Sonnet 96.1% / 95.9%，Haiku 98.3% / 98.3% |
 | `cache-images`、`cache-images-haiku` | 只在第 1 轮附图，第 2、3 轮仍能正确回看历史图片，缓存命中与写入均在门槛内 |
 | `bridge`、`compat-npm` | npm 版 Pi 的工具桥往返通过 |
-| `bridge-standalone`、`compat-standalone` | 官方 `pi-windows-x64.zip`（v0.99.1，SHA256 已核对）中的 `pi.exe` 工具桥往返通过 |
+| `bridge-standalone`、`compat-standalone` | 与基线同版本的官方 `pi-windows-x64.zip`（SHA256 已核对）中的 `pi.exe` 工具桥往返通过 |
 | `matrix`、`opus`、`fable` | Sonnet 与 Opus 的 low 至 max 五档、Haiku、Fable 均解析到对应全名型号；窗口与输出上限与选择器一致（Sonnet/Opus 1M / 128K，Fable 1M / 64K，Haiku 200K / 32K） |
 
-`src/compatibility.ts` 的 `VERIFIED_VERSIONS` 沿用上游值，doctor 仍把上述 Pi 与 Claude Code 版本标为 unverified。Linux 与 macOS 未在本分支验证。
+`src/compatibility.ts` 的 `VERIFIED_VERSIONS` 据此提升到本次验证的版本，doctor 对其报 verified。Linux 与 macOS 未在本分支做付费验证。
 
 ## 安装
 
@@ -61,10 +56,10 @@ pi install git:github.com/syansunyang-collab/pi-claude-code-provider@v0.6.0-fork
 
 已安装 npm 版上游时，先执行 `pi remove npm:pi-claude-code-provider`。
 
-Claude Code 固定在 2.1.292，并在 Claude Code 设置的 `env` 中将 `DISABLE_AUTOUPDATER` 设为 `"1"`，关闭自动更新：
+Claude Code 固定在兼容基线中的版本（`/pi-claude-code-provider-doctor` 也会列出），并在 Claude Code 设置的 `env` 中将 `DISABLE_AUTOUPDATER` 设为 `"1"`，关闭自动更新：
 
 ```bash
-claude install 2.1.292
+claude install <兼容基线中的 Claude Code 版本>
 ```
 
 Windows 下 `claude` 若是 npm 生成的 `.cmd` 包装脚本，需安装原生 `claude.exe`，或将 `PI_CLAUDE_CODE_PROVIDER_PATH` 设为 `claude.exe` 的完整路径。
@@ -78,7 +73,7 @@ Windows 下 `claude` 若是 npm 生成的 `.cmd` 包装脚本，需安装原生 
 ## 已知限制与排障
 
 - **升级 Claude Code 后所有请求报 `Claude Code loaded unexpected customizations (plugins: cc-plugin-…)`**：新版本加入了内置插件。按报出的名称，把 `<去掉 cc-plugin- 前缀的名称>@builtin: false` 加入 `src/claude-args.ts` 的 `enabledPlugins`。
-- **所有请求报 `Claude Code initialized with an unexpected tool set`**：Pi 声明的工具与 Claude Code 实际加载的工具不一致。Claude Code 2.1.292 会跳过参数 schema 顶层含 `oneOf`、`anyOf` 或 `allOf` 的 MCP 工具，插件的工具集校验随即拒绝请求。比对报错中的 expected 清单与实际工具，找出缺失的工具，把它的参数 schema 改为顶层 `type: "object"` 加 `properties`，字段互斥或条件必填改在执行入口校验。
+- **所有请求报 `Claude Code initialized with an unexpected tool set`**：Pi 声明的工具与 Claude Code 实际加载的工具不一致。基线版本的 Claude Code 会跳过参数 schema 顶层含 `oneOf`、`anyOf` 或 `allOf` 的 MCP 工具，插件的工具集校验随即拒绝请求。比对报错中的 expected 清单与实际工具，找出缺失的工具，把它的参数 schema 改为顶层 `type: "object"` 加 `properties`，字段互斥或条件必填改在执行入口校验。
 - **别名换到新型号**：doctor 提示 `picker still offers <旧 id>` 时，按新型号更新 `src/catalog.ts`。
 - **运行单元测试**：先执行 `npm run setup:dev`。测试假定 `PI_CLAUDE_CODE_PROVIDER_WEB_SEARCH` 为默认值，环境中设为 `off` 时，需在测试进程中去掉该变量。
 
