@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [0.6.0-fork.1] - 2026-10-09
+
+Windows maintenance fork of the archived upstream 0.6.0, for Claude Code 2.1.292. See the README for differences, usage boundaries and the verified environment.
+
+### Changed
+
+- Images are sent inline as base64 blocks on stdin, directly after the transcript record that names them, instead of `@`-referenced files. Claude Code 2.1.292 silently drops `@`-referenced files over 256 KiB, so screenshots rarely reached the model, and each added image rewrote the cached prefix. Every occurrence now counts toward the image limits.
+- The model picker offers full model ids (`claude-sonnet-5-5`, `claude-fable-5-1`, `claude-opus-5-5`, `claude-haiku-4-5`) with Claude Code's own windows and output caps, instead of the aliases. The doctor names a picker id the alias no longer serves. Sessions saved with an alias id need a model reselected.
+
+### Fixed
+
+- Every request failed at the isolation check under Claude Code 2.1.292, which loads its built-in `plugin-authoring` plugin in print mode. It is now disabled alongside `agents-md` and `telemetry`.
+- Summary requests that Pi marks `cacheRetention: "none"`, such as compaction, no longer write the whole prompt to the prompt cache.
+- `npm run capture:claude-breakpoints` and the paid model matrix start again with full model ids.
+- The doctor's context-window lookup type-checks against Pi's `ProviderModelConfig` union.
+
+### Removed
+
+- The session image store and per-request image leases, unused once images travel inline. Image directories left by earlier versions are still reclaimed by stale-directory recovery.
+
 ## [0.6.0] - 2026-09-27
 
 > **This project is mothballed after the release of v0.6.0.** Pi and Claude Code are both extremely fast-moving projects that publish breaking changes regularly, and this was a hobby project rather than a professional venture, so I have other plans for my time and my tokens. I encourage people to look for other providers, such as [pi-claude-bridge](https://github.com/elidickinson/pi-claude-bridge), which is built on the Agent SDK. Please do not report further issues or submit pull requests. If Pi and Claude Code stabilize in future months, I may revisit this project. I thank my users for their kind words and wish everyone good luck with their own efforts.

@@ -1,4 +1,79 @@
-# pi-claude-code-provider
+# pi-claude-code-provider（Windows 维护分支）
+
+本仓库是 [chem/pi-claude-code-provider](https://github.com/chem/pi-claude-code-provider) 的分支。上游在 2026-09-27 发布 v0.6.0 后归档，不再维护。本分支在 v0.6.0 基础上适配 Claude Code 2.1.292 与 Windows，保留原 MIT 许可证与作者署名。分割线以下为上游英文文档，安装地址与模型名已按本分支更新。
+
+## 使用边界
+
+- 插件只在本机启动已安装的官方 `claude` 可执行文件，使用其公开文档中的非交互模式（`claude -p` / `--print`）；登录与认证全部由 Claude Code 自身完成。
+- 插件不读取、复制或转发 Claude 凭据与 OAuth token，不模拟官方客户端流量，不使用 Anthropic API key，也不使用 Agent SDK。
+- 每位使用者使用自己的 Claude 订阅账号，用量计入该账号的套餐额度。不支持共享账号。
+- Anthropic 帮助中心 [Use the Claude Agent SDK with your Claude plan](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)（2026-10-09 查阅）原文：
+
+  > **Update October 7, 2026:** … You can still use the Claude Agent SDK, `claude -p`, and third-party apps with your subscription limits.
+  >
+  > **Update June 15, 2026:** We've paused the previously-announced changes to Claude Agent SDK usage. For now, nothing has changed: Claude Agent SDK, `claude -p`, and third-party app usage still draw from your subscription limits.
+
+  [Monthly API credits for Max and Team plans](https://support.claude.com/en/articles/17154008) 说明：以订阅登录时，`claude -p` 的用量计入套餐额度，不使用 API 额度。
+- 上述说明带有 “For now” 表述，政策可能调整。使用前以 Anthropic 当前的条款与帮助中心说明为准。
+
+## 与上游 v0.6.0 的差异
+
+| 改动 | 上游 v0.6.0 | 本分支 |
+| --- | --- | --- |
+| 图片传输 | 图片写入私有目录，在 prompt 末尾以 `@"路径"` 引用。Claude Code 2.1.292 对超过 256 KiB 的 `@` 文件既不附图也不报错；附件叙述排在整段记录之前，每加一张图都重写缓存前缀 | 图片以 base64 块经 stdin 发送，紧跟引用它的记录；缓存断点放在最后一条文本记录上。每次出现都计入 20 张、单张 20 MB、总计 100 MB 的限制 |
+| 内置插件隔离 | 2.1.292 在 print 模式默认加载 `cc-plugin-plugin-authoring`，初始化隔离检查报 `unexpected customizations`，所有请求失败 | `--settings` 中加入 `"plugin-authoring@builtin": false` |
+| 摘要请求缓存 | Pi 对压缩、分支摘要传 `cacheRetention: "none"` 时，Claude Code 仍在尾部放 1h 断点，整段摘要写入缓存 | 这类请求给 Claude 子进程设 `DISABLE_PROMPT_CACHING=1`，缓存写入为 0；普通请求不受影响 |
+| 模型选择器 | 列出 `sonnet`、`fable`、`opus`、`haiku` 四个别名 | 列出别名在 2.1.292 中解析到的全名 `claude-sonnet-5-5`、`claude-fable-5-1`、`claude-opus-5-5`、`claude-haiku-4-5`；别名换到新型号时，doctor 提示 `picker still offers <旧 id>` |
+| 会话图片目录 | 每个会话维护私有图片目录与请求租约 | 图片不再落盘，删除图片目录与租约代码；旧版本遗留的图片目录仍由过期目录回收处理 |
+| 维护脚本 | `capture-claude-breakpoints.js`、`model-matrix.js` 按别名查型号表 | 随型号全名一起更新，避免启动即失败 |
+| doctor 类型检查 | 较新 Pi 的 `ProviderModelConfig` 为联合类型，读取 `contextWindow` 无法通过类型检查 | 增加类型判断 |
+| 单元测试 | 按图片落盘与别名编写 | 按内联图片与型号全名更新 |
+
+兼容性变化：旧会话中保存的 `pi-claude-code-provider/opus` 等别名 id 不再可选，恢复这类会话需重新选择模型。完整记录见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 已验证环境
+
+| 项 | 版本 |
+| --- | --- |
+| 系统 | Windows 11 x64 |
+| Pi | 0.99.1 |
+| Claude Code | 2.1.292 |
+| Node.js | 24.12.0 |
+
+`npm test`（Windows）：382 条，348 通过，34 条为平台相关跳过，0 失败；`npm run check` 通过。上游的付费验证矩阵（`npm run test:paid:*`）未在本分支运行，doctor 因此把上述 Pi 与 Claude Code 版本标为 unverified。Linux 与 macOS 未在本分支验证。
+
+## 安装
+
+```bash
+pi install git:github.com/syansunyang-collab/pi-claude-code-provider@v0.6.0-fork.1
+```
+
+已安装 npm 版上游时，先执行 `pi remove npm:pi-claude-code-provider`。
+
+Claude Code 固定在 2.1.292，并在 Claude Code 设置的 `env` 中将 `DISABLE_AUTOUPDATER` 设为 `"1"`，关闭自动更新：
+
+```bash
+claude install 2.1.292
+```
+
+Windows 下 `claude` 若是 npm 生成的 `.cmd` 包装脚本，需安装原生 `claude.exe`，或将 `PI_CLAUDE_CODE_PROVIDER_PATH` 设为 `claude.exe` 的完整路径。
+
+## 使用
+
+- 在 `/model` 中选择 `pi-claude-code-provider` 下的型号，或执行 `pi --model pi-claude-code-provider/claude-sonnet-5-5`。
+- 安装插件、升级 Claude Code 后运行 `/pi-claude-code-provider-doctor`，检查版本、型号与工具桥接，不消耗订阅额度。
+- 已有其他搜索工具时设 `PI_CLAUDE_CODE_PROVIDER_WEB_SEARCH=off`，插件不再注册自带的 Claude 搜索工具。
+
+## 已知限制与排障
+
+- **升级 Claude Code 后所有请求报 `Claude Code loaded unexpected customizations (plugins: cc-plugin-…)`**：新版本加入了内置插件。按报出的名称，把 `<去掉 cc-plugin- 前缀的名称>@builtin: false` 加入 `src/claude-args.ts` 的 `enabledPlugins`。
+- **所有请求报 `Claude Code initialized with an unexpected tool set`**：Pi 声明的工具与 Claude Code 实际加载的工具不一致。Claude Code 2.1.292 会跳过参数 schema 顶层含 `oneOf`、`anyOf` 或 `allOf` 的 MCP 工具，插件的工具集校验随即拒绝请求。比对报错中的 expected 清单与实际工具，找出缺失的工具，把它的参数 schema 改为顶层 `type: "object"` 加 `properties`，字段互斥或条件必填改在执行入口校验。
+- **别名换到新型号**：doctor 提示 `picker still offers <旧 id>` 时，按新型号更新 `src/catalog.ts`。
+- **运行单元测试**：先执行 `npm run setup:dev`。测试假定 `PI_CLAUDE_CODE_PROVIDER_WEB_SEARCH` 为默认值，环境中设为 `off` 时，需在测试进程中去掉该变量。
+
+---
+
+# Upstream README (0.6.0, install and model names updated for this fork)
 
 > **This project is mothballed after the release of v0.6.0.** Pi and Claude Code are both extremely fast-moving projects that publish breaking changes regularly, and this was a hobby project rather than a professional venture, so I have other plans for my time and my tokens. I encourage people to look for other providers, such as [pi-claude-bridge](https://github.com/elidickinson/pi-claude-bridge), which is built on the Agent SDK. Please do not report further issues or submit pull requests. If Pi and Claude Code stabilize in future months, I may revisit this project. I thank my users for their kind words and wish everyone good luck with their own efforts.
 
@@ -22,30 +97,30 @@ The provider requires first-party subscription authentication. API keys and rout
 ## Install
 
 ```bash
-pi install npm:pi-claude-code-provider
+pi install git:github.com/syansunyang-collab/pi-claude-code-provider@v0.6.0-fork.1
 ```
 
 To install directly from GitHub's default branch:
 
 ```bash
-pi install git:github.com/chem/pi-claude-code-provider
+pi install git:github.com/syansunyang-collab/pi-claude-code-provider
 ```
 
 Add `-l` for a project-local installation. Pi loads project packages only after the project is trusted; use `pi config` to enable or disable the extension.
 
-For a local checkout, use `pi install /absolute/path/to/pi-claude-code-provider`. The startup `[Extensions]` list shows `chem/pi-claude-code-provider` for Git and `pi-claude-code-provider` for npm or a local checkout with that directory name. A renamed checkout shows its directory name. These labels apply to npm and standalone Pi alike.
+For a local checkout, use `pi install /absolute/path/to/pi-claude-code-provider`. The startup `[Extensions]` list shows `syansunyang-collab/pi-claude-code-provider` for Git and `pi-claude-code-provider` for npm or a local checkout with that directory name. A renamed checkout shows its directory name. These labels apply to npm and standalone Pi alike.
 
 ## Use
 
-Open `/model` and choose `sonnet`, `fable`, `opus`, or `haiku` under `pi-claude-code-provider`.
+Open `/model` and choose `claude-sonnet-5-5`, `claude-fable-5-1`, `claude-opus-5-5`, or `claude-haiku-4-5` under `pi-claude-code-provider`.
 
 To select one directly:
 
 ```text
-/model pi-claude-code-provider/sonnet
+/model pi-claude-code-provider/claude-sonnet-5-5
 ```
 
-From the command line, use `pi --model pi-claude-code-provider/sonnet`.
+From the command line, use `pi --model pi-claude-code-provider/claude-sonnet-5-5`.
 
 Sonnet, Fable, and Opus support Pi thinking levels from `low` through `max`. Haiku uses Claude Code's default thinking, even when Pi shows thinking as off. Sonnet, Fable, and Opus have a 1M context window on every plan, including Pro; Haiku has 200K.
 

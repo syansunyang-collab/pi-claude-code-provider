@@ -1,19 +1,19 @@
 {
   "name": "pi-claude-code-provider",
-  "version": "0.6.0",
+  "version": "0.6.0-fork.1",
   "type": "module",
-  "description": "The convenience of your Claude subscription in Pi, with the fewest possible surprises. Uses Claude Code's CLI under the hood. Mothballed after 0.6.0.",
+  "description": "Windows maintenance fork of pi-claude-code-provider for Claude Code 2.1.292: your Claude subscription in Pi through Claude Code's documented print mode.",
   "author": "chem <sineverbisnon@gmail.com>",
   "license": "MIT",
   "keywords": ["pi-package", "pi-extension", "claude-code", "subscription"],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/chem/pi-claude-code-provider.git"
+    "url": "git+https://github.com/syansunyang-collab/pi-claude-code-provider.git"
   },
   "bugs": {
-    "url": "https://github.com/chem/pi-claude-code-provider#readme"
+    "url": "https://github.com/syansunyang-collab/pi-claude-code-provider/issues"
   },
-  "homepage": "https://github.com/chem/pi-claude-code-provider#readme",
+  "homepage": "https://github.com/syansunyang-collab/pi-claude-code-provider#readme",
   "files": [
     "bridge",
     "index.ts",

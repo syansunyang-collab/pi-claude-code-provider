@@ -24,7 +24,7 @@ pi install /absolute/path/to/pi-claude-code-provider
 
 | Change area | Owning modules | Focused validation |
 | --- | --- | --- |
-| Extension startup, session lifetime, and session working directory | `index.ts` (manifest entry and implementation), `src/session-registry.ts`, `src/session-image-store.ts` | `extension.test.js`, `packaging.test.js`, `session-registry.test.js`, `session-image-store.test.js` |
+| Extension startup, session lifetime, and session working directory | `index.ts` (manifest entry and implementation), `src/session-registry.ts` | `extension.test.js`, `packaging.test.js`, `session-registry.test.js` |
 | Authentication, CLI, model catalog, and compatibility | `src/auth.ts`, `src/catalog.ts`, `src/claude-args.ts`, `src/compatibility.ts` | `auth.test.js`, `catalog.test.js`, `claude-args.test.js`, `compatibility.test.js` |
 | Transcript and provider lifecycle | `src/context-serializer.ts`, `src/provider.ts`, `src/stream-events.ts`, `src/claude-protocol.ts`, `src/jsonl.ts`, `src/output.ts`, `src/errors.ts`, `src/types.ts` | `context-serializer.test.js`, `provider.test.js`, `stream-events.test.js`, `claude-protocol.test.js`, `jsonl.test.js`, `errors.test.js` |
 | Runtime launch, process trees, and private state | `src/claude-process.ts`, `src/host-runtime.ts`, `src/process-utils.ts`, `src/runtime-directories.ts` | `process-utils.test.js`, `runtime-directories.test.js`, `exit-cleanup.test.js` |
@@ -120,7 +120,7 @@ The runner gives Pi a temporary agent directory and disables automatic extension
 | `npm run test:paid:matrix` | 11 |
 | `npm run test:paid:release` | 57 |
 
-Run paid stages one at a time. `model-matrix.js` checks for leaked private state by diffing the temporary root for leftover private *request* directories, so another provider request running at the same time reads as a leak. The session image directory is deliberately outside that diff, because it is session-scoped rather than per-request; `session-image-store.test.js` covers its removal.
+Run paid stages one at a time. `model-matrix.js` checks for leaked private state by diffing the temporary root for leftover private *request* directories, so another provider request running at the same time reads as a leak. Images travel inline, so a request leaves no session-scoped image directory to diff.
 
 The tool steps need only the shell Pi's `bash` tool uses: on Windows, Git Bash at `%ProgramFiles%\Git\bin\bash.exe` or a `bash.exe` on `PATH`. They run shell scripts rather than an interpreter such as Python, so a gate result never depends on what else is installed, and `test:paid:full` checks for that shell before its first Claude launch.
 

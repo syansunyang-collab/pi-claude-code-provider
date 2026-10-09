@@ -8,7 +8,7 @@ const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const expected = {
   name: "pi-claude-code-provider",
   author: "chem <sineverbisnon@gmail.com>",
-  repository: "git+https://github.com/chem/pi-claude-code-provider.git",
+  repository: "git+https://github.com/syansunyang-collab/pi-claude-code-provider.git",
 };
 
 if (manifest.name !== expected.name) throw new Error(`Unexpected npm name: ${manifest.name}`);
