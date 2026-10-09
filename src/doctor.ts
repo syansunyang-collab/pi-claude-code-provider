@@ -268,15 +268,16 @@ function promptCacheNote(metrics: RequestMetrics): string | undefined {
 function formatServedModels(input: DoctorSummaryInput): string {
   const versions = input.modelVersions;
   if (!versions) return "";
-  const advertised = MODEL_ALIASES.filter((alias) => input.modelIds.includes(alias));
-  if (advertised.length === 0) return "";
-  const entries = advertised.map((alias) => {
+  const entries = MODEL_ALIASES.flatMap((alias) => {
+    const offered = input.modelIds.find((id) => id.startsWith(`claude-${alias}-`));
+    if (offered === undefined) return [];
     const model = versions[alias];
-    if (model === undefined) return `${alias} undetermined`;
+    if (model === undefined) return [`${alias} undetermined`];
     const caveat = alias === "fable" && input.installation.subscriptionType === "pro"
       ? " (Pro: requires usage credits enabled)"
       : "";
-    return `${alias} ${model}${caveat}`;
+    const stale = model === offered ? "" : ` (picker still offers ${offered})`;
+    return [`${alias} ${model}${caveat}${stale}`];
   });
   return entries.join(", ");
 }

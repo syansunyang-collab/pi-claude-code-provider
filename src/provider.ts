@@ -300,7 +300,7 @@ export function createClaudeStream(
           prepared.transcriptBytes,
           prepared.catalogBytes,
           systemPromptBytes,
-          prepared.attachmentPaths.length,
+          prepared.imageCount,
         );
 
         // Configuration must fail before a paid budget slot is claimed or a
@@ -351,6 +351,10 @@ export function createClaudeStream(
           args,
           env: {
             CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(maxOutputTokens),
+            // Dropping the transcript breakpoint alone still writes the whole
+            // summary prompt: Claude Code places its own 1h breakpoint after the
+            // transcript (Claude 5) or on its last block (Haiku).
+            ...(options?.cacheRetention === "none" ? { DISABLE_PROMPT_CACHING: "1" } : {}),
             ...(prepared.catalogPath ? { PI_CLAUDE_TOOL_CATALOG: prepared.catalogPath } : {}),
           },
           directory: prepared.directory,

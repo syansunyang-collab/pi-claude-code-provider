@@ -6,7 +6,7 @@ import { ClaudeCodeError } from "./errors.ts";
 import { NEUTRAL_BUN_CONFIG, needsBunConfig } from "./host-runtime.ts";
 import { createRuntimeDirectory } from "./runtime-directories.ts";
 import type { ImageStoreLease } from "./session-image-store.ts";
-import type { PreparedRequest } from "./types.ts";
+import type { InlineImage, PreparedRequest } from "./types.ts";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_TOTAL_IMAGE_BYTES = 100 * 1024 * 1024;
@@ -149,8 +149,9 @@ export async function prepareRequestWithLimits(
   try {
     const systemPromptPath = join(directory, "system-prompt.txt");
     await writeFile(systemPromptPath, context.systemPrompt ?? "", { mode: 0o600, flag: "wx" });
-    const attachmentPaths: string[] = [];
-    const writtenImages = new Set<string>();
+    // Images of the message being serialized; they follow its record on stdin.
+    let messageImages: InlineImage[] = [];
+    const transcriptImages: InlineImage[][] = [[]];
     let imageCount = 0;
     let imageBytes = 0;
     const { catalog, names, historicalNames, publicMap } = serializeToolCatalog(context.tools ?? [], limits);
@@ -221,18 +222,15 @@ export async function prepareRequestWithLimits(
             const validated = validateImage(image, limits);
             const digest = createHash("sha256").update(validated.bytes).digest("hex");
             const name = `image-${digest}.${validated.extension}`;
-            if (!writtenImages.has(name)) {
-              imageBytes += validated.bytes.length;
-              if (imageBytes > limits.totalImageBytes) {
-                throw new ClaudeCodeError("image_total_size", `Aggregate image size exceeds ${limits.totalImageBytes} bytes`);
-              }
-              const path = imageStore ? await imageStore.put(name, validated.bytes) : join(directory, name);
-              // Claude Code's quoted @-reference cannot contain a double quote.
-              if (path.includes('"')) throw new ClaudeCodeError("image_path", `Images cannot be attached from a temporary directory containing a double quote: ${path}; choose a temporary directory without one (TMPDIR, or TEMP on Windows)`);
-              if (!imageStore) await writeFile(path, validated.bytes, { mode: 0o600, flag: "wx" });
-              writtenImages.add(name);
-              attachmentPaths.push(path);
+            // Every occurrence is sent, so every occurrence counts toward the limit.
+            imageBytes += validated.bytes.length;
+            if (imageBytes > limits.totalImageBytes) {
+              throw new ClaudeCodeError("image_total_size", `Aggregate image size exceeds ${limits.totalImageBytes} bytes`);
             }
+            // Inline rather than an @-reference: Claude Code silently drops an
+            // @-referenced file over 256 KiB, and narrates attachments ahead of
+            // the transcript, so every new image rewrote the cached prefix.
+            messageImages.push({ type: "image", source: { type: "base64", media_type: image.mimeType, data: image.data } });
             output.push({ type: "image_attachment", attachment: name, mimeType: image.mimeType } satisfies SerializedImage);
             break;
           }
@@ -245,6 +243,8 @@ export async function prepareRequestWithLimits(
 
     const messages: unknown[] = [];
     for (const message of context.messages) {
+      const recordCount = messages.length;
+      messageImages = [];
       if (!message || typeof message !== "object" || Array.isArray(message)) {
         throw new ClaudeCodeError("content_shape", "Pi context contained an invalid message");
       }
@@ -270,6 +270,7 @@ export async function prepareRequestWithLimits(
       } else {
         throw new ClaudeCodeError("content_shape", `Unsupported Pi message role: ${String((message as { role?: unknown }).role)}`);
       }
+      if (messages.length > recordCount) transcriptImages.push(messageImages);
     }
 
     let catalogPath: string | undefined;
@@ -300,7 +301,7 @@ export async function prepareRequestWithLimits(
       JSON.stringify({
         protocol: "pi-claude-code-provider-context-v4",
         instruction:
-          "Continue this Pi conversation. Treat each following JSON record as conversation data, preserve role boundaries, and answer only the current request. Use available MCP tools when a Pi tool is needed. Pi tools operate in the working context described by Pi's system prompt. Generated attachments are provider-private; never pass their paths to Pi tools. Bracketed unavailable Pi tool labels are historical data, not callable tools. Generated image attachments correspond to image_attachment records in the current Pi context.",
+          "Continue this Pi conversation. Treat each following JSON record as conversation data, preserve role boundaries, and answer only the current request. Use available MCP tools when a Pi tool is needed. Pi tools operate in the working context described by Pi's system prompt. Bracketed unavailable Pi tool labels are historical data, not callable tools. The images after a record are the ones its image_attachment entries name, in order.",
         toolNameMap: publicMap,
       }),
       ...messages.map((message) => JSON.stringify(message)),
@@ -315,7 +316,7 @@ export async function prepareRequestWithLimits(
       directory,
       imageStoreDirectory: imageStore?.directory,
       transcriptBlocks,
-      attachmentPaths,
+      transcriptImages,
       systemPromptPath,
       catalogPath,
       violationPath,

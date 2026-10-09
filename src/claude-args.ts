@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { ClaudeCodeError } from "./errors.ts";
 import { scriptLaunch, type ScriptLaunch } from "./host-runtime.ts";
-import type { PreparedRequest } from "./types.ts";
+import type { InlineImage, PreparedRequest } from "./types.ts";
 
 // Empty setting sources plus explicit settings preserve subscription authentication
 // while suppressing user and project customizations. --bare would disable OAuth,
@@ -9,7 +9,8 @@ import type { PreparedRequest } from "./types.ts";
 // Claude Code otherwise appends a changing <total_tokens> reminder that breaks
 // append-only cache reuse across this provider's fresh print-mode processes.
 // Claude Code 2.1.281 loads its built-in agents-md plugin regardless of setting
-// sources; initialization would then report it and fail the isolation check.
+// sources, and 2.1.292 adds plugin-authoring; initialization would then report
+// them and fail the isolation check.
 // Pin telemetry too, supplementing the environment's nonessential-traffic switch.
 // switchModelsOnFlag is Claude Code's documented setting for a request a model's
 // safety classifiers flag. By default it re-runs the request on another model, which
@@ -21,7 +22,7 @@ const SETTINGS = JSON.stringify({
   autoMemoryEnabled: false,
   totalTokensReminder: "off",
   switchModelsOnFlag: false,
-  enabledPlugins: { "agents-md@builtin": false, "telemetry@builtin": false },
+  enabledPlugins: { "agents-md@builtin": false, "telemetry@builtin": false, "plugin-authoring@builtin": false },
 });
 export const EMPTY_MCP = JSON.stringify({ mcpServers: {} });
 export const BRIDGE_PATH = fileURLToPath(new URL("../bridge/mcp-proposal-server.js", import.meta.url));
@@ -64,11 +65,9 @@ export function thinkingDisplay(environment: NodeJS.ProcessEnv = process.env): "
   throw new ClaudeCodeError("thinking_display_config", `${THINKING_DISPLAY_ENV} must be "summarized", "omitted", or "off"`);
 }
 
-interface PromptBlock {
-  type: "text";
-  text: string;
+type PromptBlock = ({ type: "text"; text: string } | InlineImage) & {
   cache_control?: typeof TRANSCRIPT_CACHE_CONTROL;
-}
+};
 
 /** The single owner of how the proposal bridge is launched on either Pi distribution. */
 export function bridgeLaunch(bunConfigPath?: string): ScriptLaunch {
@@ -110,25 +109,17 @@ export function providerArgs(
   effort: string | undefined,
   options: { transcriptBreakpoint?: boolean; thinkingDisplay?: "summarized" | "omitted" } = {},
 ): { args: string[]; prompt: PromptBlock[] } {
-  // Quoted absolute references: Claude runs in Pi's session directory, where a
-  // relative reference would resolve against the project, and the quotes keep a
-  // temporary root containing spaces in one reference.
-  const imageRefs = prepared.attachmentPaths.map((path) => `@"${path}"`).join(" ");
-  const imageInstruction = imageRefs
-    ? ` Generated image attachments for image_attachment blocks: ${imageRefs}.`
-    : "";
-  // Keep the attachment list after unchanged history and outside the breakpoint.
-  // Claude Code narrates image reads ahead of the transcript, so the paths must
-  // also stay stable across requests for that earlier prefix to be reusable.
-  const markedBlock = options.transcriptBreakpoint === false ? -1 : prepared.transcriptBlocks.length - 1;
-  const prompt: PromptBlock[] = [
-    ...prepared.transcriptBlocks.map((text, index) => ({
-      type: "text" as const,
-      text,
-      ...(index === markedBlock ? { cache_control: TRANSCRIPT_CACHE_CONTROL } : {}),
-    })),
-    ...(imageInstruction ? [{ type: "text" as const, text: imageInstruction.trim() }] : []),
-  ];
+  // Each record's images follow it, so a new image only extends the history.
+  // The breakpoint goes on the last record rather than a trailing image, whose
+  // cache_control Claude Code drops when it re-encodes the image.
+  const prompt: PromptBlock[] = prepared.transcriptBlocks.flatMap((text, index) => [
+    { type: "text" as const, text },
+    ...(prepared.transcriptImages?.[index] ?? []),
+  ]);
+  const lastRecord = prompt.findLastIndex((block) => block.type === "text");
+  if (options.transcriptBreakpoint !== false && lastRecord >= 0) {
+    prompt[lastRecord] = { ...prompt[lastRecord]!, cache_control: TRANSCRIPT_CACHE_CONTROL };
+  }
   const bridge = bridgeLaunch(prepared.bunConfigPath);
   const mcpConfig = prepared.catalogPath
     ? JSON.stringify({

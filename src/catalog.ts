@@ -21,7 +21,7 @@ function providerModel(
     id,
     name,
     // Haiku has no effort control. Claude Code still owns its thinking default.
-    ...(id === "haiku" ? { reasoning: false } : { reasoning: true, thinkingLevelMap: EFFORT_LEVELS }),
+    ...(id.startsWith("claude-haiku-") ? { reasoning: false } : { reasoning: true, thinkingLevelMap: EFFORT_LEVELS }),
     input: ["text", "image"],
     cost: ZERO_COST,
     contextWindow,
@@ -30,26 +30,20 @@ function providerModel(
 }
 
 /**
- * Every alias has the same context window on every subscription tier: Claude
- * Code serves Sonnet 5, Fable 5.1, and Opus 5.5 with their native 1M window
- * on Pro as well as Max, Team, and Enterprise. The window needs no usage
- * credits, though Fable itself does on Pro. Each
- * maxTokens is Claude Code's own default output cap for the model the alias
- * serves. The paid model matrix asserts both against what Claude Code reports
- * for a real login; see DEVELOPING.md for the baseline the gate runs against.
- *
- * The captured request fixtures disagree, and are not evidence: they are taken
- * against a loopback server with a dummy token, where Claude Code resolves no
- * subscription and reports its unauthenticated default.
+ * Full model ids, not the sonnet/fable/opus/haiku aliases: they are what the
+ * aliases resolve to in Claude Code 2.1.292, and the names match its own model
+ * catalog. Each context window and maxTokens is that catalog's window and
+ * default output cap for the model. When Claude Code moves an alias to a newer
+ * model, the doctor names the id this list still offers.
  *
  * The doctor reports a served window that stops matching the configured one,
  * because Pi places its compaction threshold by the configured value.
  */
 export function providerModels(): ProviderModelConfig[] {
   return [
-    providerModel("sonnet", "Claude Code Sonnet", 1_000_000, 64_000),
-    providerModel("fable", "Claude Code Fable", 1_000_000, 64_000),
-    providerModel("opus", "Claude Code Opus", 1_000_000, 128_000),
-    providerModel("haiku", "Claude Code Haiku", 200_000, 32_000),
+    providerModel("claude-sonnet-5-5", "Sonnet 5.5", 1_000_000, 128_000),
+    providerModel("claude-fable-5-1", "Fable 5.1", 1_000_000, 64_000),
+    providerModel("claude-opus-5-5", "Opus 5.5", 1_000_000, 128_000),
+    providerModel("claude-haiku-4-5", "Haiku 4.5", 200_000, 32_000),
   ];
 }

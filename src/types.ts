@@ -16,11 +16,18 @@ export interface ClaudeAuthStatus {
   subscriptionType?: string;
 }
 
+/** An image sent inline on stdin; Claude Code downsizes and recompresses it like any pasted image. */
+export interface InlineImage {
+  type: "image";
+  source: { type: "base64"; media_type: string; data: string };
+}
+
 export interface PreparedRequest {
   directory: string;
   imageStoreDirectory?: string;
   transcriptBlocks: string[];
-  attachmentPaths: string[];
+  /** Images per transcript block, sent directly after the block whose image_attachment records name them. */
+  transcriptImages?: InlineImage[][];
   systemPromptPath: string;
   catalogPath?: string;
   violationPath?: string;
@@ -31,7 +38,7 @@ export interface PreparedRequest {
   catalogBytes: number;
   /** Image content blocks, which is what the per-request image limit counts. */
   imageCount: number;
-  /** Bytes actually written, so identical images are counted once. */
+  /** Image bytes sent, counting every occurrence; each is inlined on stdin. */
   imageBytes: number;
 }
 
