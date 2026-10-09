@@ -40,7 +40,18 @@
 | Claude Code | 2.1.292 |
 | Node.js | 24.12.0 |
 
-`npm test`（Windows）：382 条，349 通过，33 条为平台相关跳过，0 失败；`npm run check` 通过。上游的付费验证矩阵（`npm run test:paid:*`）未在本分支运行，doctor 因此把上述 Pi 与 Claude Code 版本标为 unverified。Linux 与 macOS 未在本分支验证。
+`npm test`（Windows）：382 条，349 通过，33 条为平台相关跳过，0 失败；`npm run check` 通过。付费验证（`npm run test:paid:*`，2026-10-09，提交 `696d473`，Max 订阅）：全部 15 个阶段通过，共 57 次 Claude 启动。
+
+| 阶段 | 结果 |
+| --- | --- |
+| `smoke`、`full`、`post-tools` | 基本应答、`@` 路径隔离、写入/编辑/bash 工具循环、失败工具恢复、图片输入、禁用工具排除、网页搜索均通过 |
+| `cache`、`cache-haiku` | 第 2、3 轮缓存命中：Sonnet 96.1% / 95.9%，Haiku 98.3% / 98.3% |
+| `cache-images`、`cache-images-haiku` | 只在第 1 轮附图，第 2、3 轮仍能正确回看历史图片，缓存命中与写入均在门槛内 |
+| `bridge`、`compat-npm` | npm 版 Pi 的工具桥往返通过 |
+| `bridge-standalone`、`compat-standalone` | 官方 `pi-windows-x64.zip`（v0.99.1，SHA256 已核对）中的 `pi.exe` 工具桥往返通过 |
+| `matrix`、`opus`、`fable` | Sonnet 与 Opus 的 low 至 max 五档、Haiku、Fable 均解析到对应全名型号；窗口与输出上限与选择器一致（Sonnet/Opus 1M / 128K，Fable 1M / 64K，Haiku 200K / 32K） |
+
+`src/compatibility.ts` 的 `VERIFIED_VERSIONS` 沿用上游值，doctor 仍把上述 Pi 与 Claude Code 版本标为 unverified。Linux 与 macOS 未在本分支验证。
 
 ## 安装
 
