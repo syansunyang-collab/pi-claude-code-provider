@@ -32,7 +32,7 @@ const MAX_REUSE_WRITE_FRACTION = 0.25;
 const cacheModelIndex = process.argv.indexOf("--cache-model");
 const CACHE_MODEL = (cacheModelIndex >= 0 ? process.argv[cacheModelIndex + 1] : undefined)
     ?? process.env.PI_CLAUDE_CODE_PROVIDER_CACHE_MODEL
-    ?? "sonnet:low";
+    ?? "claude-sonnet-5-5:low";
 async function runPi(cwd, prompt, extra = [], env = {}) {
     const child = spawnPi([
         "--no-session",
@@ -41,7 +41,7 @@ async function runPi(cwd, prompt, extra = [], env = {}) {
         "--provider",
         "pi-claude-code-provider",
         "--model",
-        "sonnet:medium",
+        "claude-sonnet-5-5:medium",
         ...extra,
         "-p",
         prompt,
@@ -134,7 +134,7 @@ async function runCacheProbe(cwd) {
 async function runCompatProbe(cwd) {
     const rpc = openPiRpc(cwd, [
         "--mode", "rpc", "--no-session", "-e", packageRoot,
-        "--provider", "pi-claude-code-provider", "--model", "sonnet:low", "--tools", "write",
+        "--provider", "pi-claude-code-provider", "--model", "claude-sonnet-5-5:low", "--tools", "write",
     ], "Sonnet low compatibility probe");
     let completed = false;
     try {
@@ -192,7 +192,7 @@ async function runProviderJourney(cwd) {
     const rpc = openPiRpc(cwd, [
         "--mode", "rpc", "--no-session", "-e", packageRoot,
         "--provider", "pi-claude-code-provider",
-        "--model", "sonnet:medium", "--tools", "read,write",
+        "--model", "claude-sonnet-5-5:medium", "--tools", "read,write",
     ], "Pi provider journey");
     let completed = false;
     try {

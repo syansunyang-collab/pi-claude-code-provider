@@ -24,7 +24,7 @@
 | 内置插件隔离 | 2.1.292 在 print 模式默认加载 `cc-plugin-plugin-authoring`，初始化隔离检查报 `unexpected customizations`，所有请求失败 | `--settings` 中加入 `"plugin-authoring@builtin": false` |
 | 摘要请求缓存 | Pi 对压缩、分支摘要传 `cacheRetention: "none"` 时，Claude Code 仍在尾部放 1h 断点，整段摘要写入缓存 | 这类请求给 Claude 子进程设 `DISABLE_PROMPT_CACHING=1`，缓存写入为 0；普通请求不受影响 |
 | 模型选择器 | 列出 `sonnet`、`fable`、`opus`、`haiku` 四个别名 | 列出别名在 2.1.292 中解析到的全名 `claude-sonnet-5-5`、`claude-fable-5-1`、`claude-opus-5-5`、`claude-haiku-4-5`；别名换到新型号时，doctor 提示 `picker still offers <旧 id>` |
-| 会话图片目录 | 每个会话维护私有图片目录与请求租约 | 图片不再落盘，删除图片目录与租约代码；旧版本遗留的图片目录仍由过期目录回收处理 |
+| 会话图片目录 | 每个会话维护私有图片目录与请求租约 | 图片不再落盘，删除图片目录与租约代码。旧版本遗留的图片目录在 Linux 与 macOS 上由过期目录回收处理；Windows 不执行过期目录回收，遗留目录不会自动删除，需在确认旧版本 Pi 进程全部退出后，手动删除临时目录中的 `pi-claude-code-provider-images-*` |
 | 维护脚本 | `capture-claude-breakpoints.js`、`model-matrix.js` 按别名查型号表 | 随型号全名一起更新，避免启动即失败 |
 | doctor 类型检查 | 较新 Pi 的 `ProviderModelConfig` 为联合类型，读取 `contextWindow` 无法通过类型检查 | 增加类型判断 |
 | 单元测试 | 按图片落盘与别名编写 | 按内联图片与型号全名更新 |

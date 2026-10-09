@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { MINIMUM_TOOL_BEARING_CAP, PAID_STAGES, PINNED_STAGE_SETTINGS, RELEASE_ORDER, releaseCap, stageEnvironment } from "../../scripts/lib/paid-stages.js";
 import { WEB_SEARCH_ENV, webSearchSetting } from "../../src/web-search.ts";
+import { providerModels } from "../../src/catalog.ts";
 
 const developing = fileURLToPath(new URL("../../DEVELOPING.md", import.meta.url));
 
@@ -49,6 +50,19 @@ test("every stage runs with web search registered, whatever the maintainer's she
         assert.equal(webSearchSetting(environment), "on");
         assert.equal(environment.KEEP, "ambient");
         assert.equal(environment.STAGE, "value");
+    }
+});
+
+test("every model a paid stage selects is one the picker offers", () => {
+    // The picker offers full ids; an alias here fails the stage before any launch.
+    const offered = new Set(providerModels().map((model) => model.id));
+    for (const [name, stage] of Object.entries(PAID_STAGES)) {
+        for (const flag of ["--case", "--cache-model"]) {
+            const index = stage.args.indexOf(flag);
+            if (index < 0) continue;
+            const model = stage.args[index + 1].split(":")[0];
+            assert.ok(offered.has(model), `${name} selects ${model}, which the picker does not offer`);
+        }
     }
 });
 

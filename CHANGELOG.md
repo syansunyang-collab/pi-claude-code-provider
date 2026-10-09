@@ -15,12 +15,12 @@ Windows maintenance fork of the archived upstream 0.6.0, for Claude Code 2.1.292
 
 - Every request failed at the isolation check under Claude Code 2.1.292, which loads its built-in `plugin-authoring` plugin in print mode. It is now disabled alongside `agents-md` and `telemetry`.
 - Summary requests that Pi marks `cacheRetention: "none"`, such as compaction, no longer write the whole prompt to the prompt cache.
-- `npm run capture:claude-breakpoints` and the paid model matrix start again with full model ids.
+- `npm run capture:claude-breakpoints`, the paid model matrix and every paid stage (`fable`, `opus`, `cache-haiku`, `cache-images`, `cache-images-haiku` and the live tests) select full model ids, which the picker offers.
 - The doctor's context-window lookup type-checks against Pi's `ProviderModelConfig` union.
 
 ### Removed
 
-- The session image store and per-request image leases, unused once images travel inline. Image directories left by earlier versions are still reclaimed by stale-directory recovery.
+- The session image store and per-request image leases, unused once images travel inline. On Linux and macOS, image directories left by earlier versions are still reclaimed by stale-directory recovery. Windows runs no stale-directory recovery, so such directories stay in the temporary directory until removed by hand after every earlier Pi process has exited.
 
 ## [0.6.0] - 2026-09-27
 
