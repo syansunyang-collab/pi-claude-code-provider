@@ -5,7 +5,6 @@ import type { Context, ImageContent, Tool } from "@earendil-works/pi-ai";
 import { ClaudeCodeError } from "./errors.ts";
 import { NEUTRAL_BUN_CONFIG, needsBunConfig } from "./host-runtime.ts";
 import { createRuntimeDirectory } from "./runtime-directories.ts";
-import type { ImageStoreLease } from "./session-image-store.ts";
 import type { InlineImage, PreparedRequest } from "./types.ts";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -133,8 +132,8 @@ function recordField(value: unknown, field: string): unknown {
  * tied to the current MCP catalog, while UI-only result details remain outside the
  * model transcript. See DESIGN.md for the maintained transport boundary.
  */
-export async function prepareRequest(context: Context, imageStore?: ImageStoreLease): Promise<PreparedRequest> {
-  return prepareRequestWithLimits(context, {}, undefined, imageStore);
+export async function prepareRequest(context: Context): Promise<PreparedRequest> {
+  return prepareRequestWithLimits(context);
 }
 
 /** Internal test seam; production callers use the frozen defaults above. */
@@ -142,7 +141,6 @@ export async function prepareRequestWithLimits(
   context: Context,
   overrides: Partial<RequestPreparationLimits> = {},
   temporaryRoot?: string,
-  imageStore?: ImageStoreLease,
 ): Promise<PreparedRequest> {
   const limits = { ...DEFAULT_REQUEST_PREPARATION_LIMITS, ...overrides };
   const directory = await createRuntimeDirectory("provider_request", { temporaryRoot });
@@ -314,7 +312,6 @@ export async function prepareRequestWithLimits(
     }
     return {
       directory,
-      imageStoreDirectory: imageStore?.directory,
       transcriptBlocks,
       transcriptImages,
       systemPromptPath,

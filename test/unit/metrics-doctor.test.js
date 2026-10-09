@@ -131,15 +131,19 @@ test("metrics logging exposes only a sanitized latest failure", async () => {
     }
 });
 function doctorBase() {
-    return { platformStatus: platformStatus("linux", "x64", "6.6-microsoft-standard-WSL2", "Ubuntu"), piStatus: versionStatus("Pi", "1", "1"), claudeStatus: versionStatus("Claude Code", "2", "1"), installation: { executable: "/usr/bin/claude", version: "2", subscriptionType: "pro" }, modelIds: ["sonnet"], runtimeCleanup: { removed: 0, failures: 0 } };
+    return { platformStatus: platformStatus("linux", "x64", "6.6-microsoft-standard-WSL2", "Ubuntu"), piStatus: versionStatus("Pi", "1", "1"), claudeStatus: versionStatus("Claude Code", "2", "1"), installation: { executable: "/usr/bin/claude", version: "2", subscriptionType: "pro" }, modelIds: ["claude-sonnet-5-5"], runtimeCleanup: { removed: 0, failures: 0 } };
 }
 test("doctor names the model each alias would be served, or says it cannot", () => {
-    const base = { ...doctorBase(), modelIds: ["sonnet", "fable", "opus", "haiku"] };
+    const base = { ...doctorBase(), modelIds: ["claude-sonnet-5-5", "claude-fable-5-1", "claude-opus-5-5", "claude-haiku-4-5"] };
     // No map at all: the doctor stays exactly as it was before the scan existed.
     assert.doesNotMatch(formatDoctorSummary(base), /Claude Code install/);
-    const versions = { sonnet: "claude-sonnet-5", fable: "claude-fable-5-1", opus: "claude-opus-5", haiku: "claude-haiku-4-5" };
+    const versions = { sonnet: "claude-sonnet-5-5", fable: "claude-fable-5-1", opus: "claude-opus-5-5", haiku: "claude-haiku-4-5" };
     const pro = formatDoctorSummary({ ...base, modelVersions: versions });
-    assert.match(pro, /^Served models \(Claude Code install\): sonnet claude-sonnet-5, fable claude-fable-5-1 \(Pro: requires usage credits enabled\), opus claude-opus-5, haiku claude-haiku-4-5$/m);
+    assert.match(pro, /^Served models \(Claude Code install\): sonnet claude-sonnet-5-5, fable claude-fable-5-1 \(Pro: requires usage credits enabled\), opus claude-opus-5-5, haiku claude-haiku-4-5$/m);
+    assert.doesNotMatch(pro, /picker still offers/);
+    // An alias Claude Code has moved to a newer model names the stale picker id.
+    const moved = formatDoctorSummary({ ...base, modelVersions: { ...versions, opus: "claude-opus-6" } });
+    assert.match(moved, /opus claude-opus-6 \(picker still offers claude-opus-5-5\)/);
     // The caveat is about entitlement, not detection: auth status exposes no
     // credit field, so the wording must not claim to know either way.
     assert.doesNotMatch(pro, /credits (?:are|enabled and|disabled)/);
@@ -147,7 +151,7 @@ test("doctor names the model each alias would be served, or says it cannot", () 
     assert.doesNotMatch(max, /requires usage credits/);
     // An alias the scanner could not identify is reported as undetermined rather
     // than omitted silently, and never as unavailable: the scan is not a runtime check.
-    assert.match(formatDoctorSummary({ ...base, modelVersions: { sonnet: "claude-sonnet-5" } }), /sonnet claude-sonnet-5, fable undetermined, opus undetermined, haiku undetermined/);
+    assert.match(formatDoctorSummary({ ...base, modelVersions: { sonnet: "claude-sonnet-5-5" } }), /sonnet claude-sonnet-5-5, fable undetermined, opus undetermined, haiku undetermined/);
     assert.match(formatDoctorSummary({ ...base, modelVersions: {} }), /sonnet undetermined/);
     assert.doesNotMatch(formatDoctorSummary({ ...base, modelVersions: {} }), /unavailable/);
 });
@@ -208,13 +212,13 @@ test("doctor reports a served context window only once it stops matching the con
     // configures 1M, which the paid matrix has verified, so a match stays silent.
     const base = doctorBase();
     assert.doesNotMatch(formatDoctorSummary({ ...base, metrics }), /Context window:/);
-    const drifted = formatDoctorSummary({ ...base, metrics: { ...metrics, servedContextWindow: 200000 } });
-    assert.match(drifted, /^Context window: sonnet served 200000, configured 1000000; Pi compacts by the configured value$/m);
+    const drifted = formatDoctorSummary({ ...base, metrics: { ...metrics, requestedModel: "claude-sonnet-5-5", servedContextWindow: 200000 } });
+    assert.match(drifted, /^Context window: claude-sonnet-5-5 served 200000, configured 1000000; Pi compacts by the configured value$/m);
     // A larger served window is still a mismatch worth stating; only equality is silent.
-    assert.match(formatDoctorSummary({ ...base, metrics: { ...metrics, requestedModel: "haiku", servedContextWindow: 1000000 } }), /haiku served 1000000, configured 200000/);
+    assert.match(formatDoctorSummary({ ...base, metrics: { ...metrics, requestedModel: "claude-haiku-4-5", servedContextWindow: 1000000 } }), /claude-haiku-4-5 served 1000000, configured 200000/);
     // Opus is served with its 1M window on Pro, which the fixture's account uses.
     assert.equal(base.installation.subscriptionType, "pro");
-    assert.doesNotMatch(formatDoctorSummary({ ...base, metrics: { ...metrics, requestedModel: "opus", servedContextWindow: 1000000 } }), /Context window:/);
+    assert.doesNotMatch(formatDoctorSummary({ ...base, metrics: { ...metrics, requestedModel: "claude-opus-5-5", servedContextWindow: 1000000 } }), /Context window:/);
     // Nothing to compare against is not a finding.
     assert.doesNotMatch(formatDoctorSummary({ ...base, metrics: { ...metrics, servedContextWindow: undefined } }), /Context window:/);
     assert.doesNotMatch(formatDoctorSummary({ ...base, metrics: { ...metrics, requestedModel: "unknown-alias" } }), /Context window:/);

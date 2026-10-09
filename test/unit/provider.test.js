@@ -9,11 +9,10 @@ import { createCodingTools } from "@earendil-works/pi-coding-agent";
 import { containsPrivateTransportPath, isExpectedToolHandoffExit, waitForReadyOrExit } from "../../src/provider.ts";
 import { createTestClaudeStream as createClaudeStream, requestMetrics, settledRequest } from "../support/provider-request.js";
 import { ProcessTerminationError, superviseProcess, terminateProcessGroup } from "../../src/process-utils.ts";
-import { SessionImageStore } from "../../src/session-image-store.ts";
 import { privatePathSpellings } from "../../src/runtime-directories.ts";
 import { resolveSession } from "../../src/session-registry.ts";
 import { supervisorWithCleanupFailure } from "../support/process-fixture.js";
-import { waitFor, waitForRemoval, withTimeout } from "../support/wait.js";
+import { waitFor, withTimeout } from "../support/wait.js";
 import { getLastRequestMetrics, recordRequestMetrics } from "../../src/metrics.ts";
 import { createNodeFixture } from "../support/node-fixture.js";
 import { CAPTURED_CLAUDE_VERSION, PROVIDER_INIT_FIELDS, claudeFixtureBody, initRecord, streamRecoveryRecords, toolUseEvents } from "../support/claude-fixture.js";
@@ -238,7 +237,8 @@ setTimeout(() => {
         const captured = JSON.parse(await readFile(join(fake.directory, "captured-preparation"), "utf8"));
         assert.equal(captured.systemPrompt, "replacement system");
         assert.deepEqual(captured.catalog, [{ name: "read", description: "read", inputSchema: readTool.parameters }]);
-        assert.ok(captured.files.some((name) => /^image-[0-9a-f]{64}\.png$/.test(name)));
+        // The image travels inline on stdin, never as a private file.
+        assert.equal(captured.files.some((name) => /^image-/.test(name)), false);
         const metrics = await requestMetrics(result, (entry) => entry.stopReason === "stop");
         assert.equal(metrics.schemaVersion, 5);
         assert.equal(metrics.messageCount, replacement.messages.length);
@@ -411,12 +411,10 @@ test("provider settles once and retains marked state when process death is unkno
     }
 });
 
-test("provider retains request and session images when tree cleanup fails after leader exit", { skip: process.platform === "win32", timeout: 5000 }, async () => {
+test("provider retains request state when tree cleanup fails after leader exit", { skip: process.platform === "win32", timeout: 5000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), "provider-exited-leader-"));
     const originalTmpdir = process.env.TMPDIR;
     process.env.TMPDIR = root;
-    const store = new SessionImageStore();
-    store.open();
     const fake = await fakeClaude(`
 process.stdin.resume();
 process.stdin.on("end", () => {
@@ -428,7 +426,7 @@ process.stdin.on("end", () => {
     let child;
     try {
         const stream = createClaudeStream({ executable: fake.executable, version: "test", subscriptionType: "pro" }, {
-            resolveSession: () => ({ cwd: root, imageStore: store }),
+            resolveSession: () => ({ cwd: root }),
             supervise: (running, options) => {
                 child = running;
                 return superviseProcess(running, { ...options, terminate: async () => {
@@ -444,15 +442,11 @@ process.stdin.on("end", () => {
         assert.match(result.errorMessage, /runtime state was retained/);
         const metrics = await requestMetrics(result, (entry) => entry.errorCategory === "process_cleanup");
         assert.equal(metrics.cleanupComplete, false);
-        await store.close();
         const entries = await readdir(root);
         assert.equal(entries.filter((name) => name.startsWith("pi-claude-code-provider-request-")).length, 1);
-        const images = entries.filter((name) => name.startsWith("pi-claude-code-provider-images-"));
-        assert.equal(images.length, 1);
-        assert.equal((await readdir(join(root, images[0]))).filter((name) => name.endsWith(".png")).length, 1);
+        assert.equal(entries.filter((name) => name.startsWith("pi-claude-code-provider-images-")).length, 0);
     } finally {
         if (child) await terminateProcessGroup(child);
-        await store.close();
         if (originalTmpdir === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = originalTmpdir;
         await rm(root, { recursive: true, force: true });
     }
@@ -1023,18 +1017,15 @@ test("private-path comparison follows native spelling and cwd rules recursively"
     assert.equal(macSpellings.some((directory) => containsPrivateTransportPath(macAlias, directory, "/work", "darwin")), true);
 });
 
-for (const sessionImage of [false, true]) {
-    test(`provider rejects equivalent paths into its private ${sessionImage ? "image store" : "request directory"}`, async () => {
-        const store = new SessionImageStore();
-        store.open();
-        const fake = await fakeClaude(`
+test("provider rejects equivalent paths into its private request directory", async () => {
+    const fake = await fakeClaude(`
 process.on("SIGTERM", () => process.exit(143));
 let input = "";
 process.stdin.on("data", (chunk) => { input += chunk; });
 process.stdin.on("end", () => {
   const path = require("node:path");
   const requestDirectory = path.dirname(process.argv[process.argv.indexOf("--system-prompt-file") + 1]);
-  const attachment = ${sessionImage} ? JSON.parse(input).message.content.at(-1).text.match(/@"([^"]+)"/)[1] : path.join(requestDirectory, "system-prompt.txt");
+  const attachment = path.join(requestDirectory, "system-prompt.txt");
   fs.writeFileSync(path.join(__dirname, "target"), attachment);
   const privateDirectory = path.dirname(attachment);
   const alternate = path.dirname(privateDirectory) + path.sep + "." + path.sep + path.basename(privateDirectory) + path.sep + path.basename(attachment);
@@ -1044,29 +1035,22 @@ process.stdin.on("end", () => {
   for (const record of records) process.stdout.write(JSON.stringify(record) + "\\n");
   setInterval(() => {}, 1000);
 });`);
-        const logical = { tools: [readTool], messages: [{ role: "user", timestamp: 1, content: sessionImage ? [
-            { type: "image", mimeType: "image/png", data: Buffer.from("private image bytes").toString("base64") },
-        ] : "hello" }] };
-        try {
-            const result = await settledRequest(createClaudeStream({ executable: fake.executable, version: "test", subscriptionType: "pro" }, {
-                resolveSession: () => ({ cwd: fake.directory, imageStore: store }),
-            })(model, providerContext(logical)));
-            assert.equal(result.stopReason, "error");
-            assert.match(result.errorMessage, /provider-private transport state/);
-            const metrics = await requestMetrics(result);
-            assert.equal(metrics.errorCategory, "private_transport");
-            assert.equal(metrics.cleanupComplete, true);
-            const target = await readFile(join(fake.directory, "target"), "utf8");
-            if (sessionImage) assert.equal(await readFile(target, "utf8"), "private image bytes");
-            else await assert.rejects(access(target));
-            await store.close();
-            await assert.rejects(access(target));
-        } finally {
-            await store.close();
-            await rm(fake.directory, { recursive: true, force: true });
-        }
-    });
-}
+    const logical = { tools: [readTool], messages: [{ role: "user", timestamp: 1, content: "hello" }] };
+    try {
+        const result = await settledRequest(createClaudeStream({ executable: fake.executable, version: "test", subscriptionType: "pro" }, {
+            resolveSession: () => ({ cwd: fake.directory }),
+        })(model, providerContext(logical)));
+        assert.equal(result.stopReason, "error");
+        assert.match(result.errorMessage, /provider-private transport state/);
+        const metrics = await requestMetrics(result);
+        assert.equal(metrics.errorCategory, "private_transport");
+        assert.equal(metrics.cleanupComplete, true);
+        const target = await readFile(join(fake.directory, "target"), "utf8");
+        await assert.rejects(access(target));
+    } finally {
+        await rm(fake.directory, { recursive: true, force: true });
+    }
+});
 // These cases start the real MCP bridge. Restricted sandboxes can drop live
 // stdin to nested Node children, which makes readiness time out independently
 // of provider behavior; run this integration coverage outside the sandbox.
@@ -1664,8 +1648,6 @@ for (const childRemainsAlive of [false, true]) {
     for (const cancellation of [false, true]) {
         test(`stalled response observer settles on ${cancellation ? "abort" : "deadline"} with an ${childRemainsAlive ? "alive" : "exited"} child`, async () => {
             const fake = await fakeClaude(textResponseBody + (childRemainsAlive ? "\nsetInterval(() => {}, 1000);" : ""));
-            const store = new SessionImageStore();
-            store.open();
             const controller = new AbortController();
             let releaseObserver;
             let rejectObserver;
@@ -1675,14 +1657,13 @@ for (const childRemainsAlive of [false, true]) {
             let closeChild;
             const closed = new Promise((resolve) => { closeChild = resolve; });
             let privateDirectory;
-            let imageDirectory;
             let metricRecords = 0;
             const unhandled = [];
             const onUnhandled = (error) => unhandled.push(error);
             process.on("unhandledRejection", onUnhandled);
             try {
                 const stream = createClaudeStream({ executable: fake.executable, version: "test", subscriptionType: "pro" }, {
-                    resolveSession: () => ({ cwd: fake.directory, imageStore: store }),
+                    resolveSession: () => ({ cwd: fake.directory }),
                     recordRequestMetrics: () => { metricRecords += 1; },
                     supervise(child, options) {
                         privateDirectory = dirname(child.spawnargs[child.spawnargs.indexOf("--system-prompt-file") + 1]);
@@ -1695,10 +1676,6 @@ for (const childRemainsAlive of [false, true]) {
                     signal: controller.signal,
                     timeoutMs: cancellation ? 5_000 : 1_000,
                     async onResponse() {
-                        const images = (await readdir(tmpdir())).filter((name) => name.startsWith("pi-claude-code-provider-images-"));
-                        assert.equal(images.length, 1);
-                        imageDirectory = join(tmpdir(), images[0]);
-                        await store.close();
                         enterObserver();
                         await observer;
                     },
@@ -1718,7 +1695,6 @@ for (const childRemainsAlive of [false, true]) {
                 assert.equal(metrics.errorCategory, cancellation ? "aborted" : "process");
                 assert.equal(metrics.cleanupComplete, true);
                 await assert.rejects(access(privateDirectory));
-                await waitForRemoval(imageDirectory);
                 const before = { ...metrics };
                 if (cancellation) releaseObserver();
                 else rejectObserver(new Error("late observer failure"));
@@ -1732,7 +1708,6 @@ for (const childRemainsAlive of [false, true]) {
                 releaseObserver();
                 controller.abort();
                 process.off("unhandledRejection", onUnhandled);
-                await store.close();
                 await rm(fake.directory, { recursive: true, force: true });
             }
         });
@@ -1785,21 +1760,18 @@ ${textResponseBody}`);
 for (const uncertainLiveness of [false, true]) {
     test(`process failure releases a stalled observer and ${uncertainLiveness ? "retains uncertain-live" : "cleans"} private state`, async () => {
         const fake = await fakeClaude(textResponseBody + "\nsetInterval(() => {}, 1000);");
-        const store = new SessionImageStore();
-        store.open();
         let releaseObserver;
         const observer = new Promise((resolve) => { releaseObserver = resolve; });
         let enterObserver;
         const entered = new Promise((resolve) => { enterObserver = resolve; });
         let child;
         let privateDirectory;
-        let imageDirectory;
         const supervise = uncertainLiveness
             ? supervisorWithCleanupFailure(new ProcessTerminationError("synthetic unknown liveness"))
             : superviseProcess;
         try {
             const stream = createClaudeStream({ executable: fake.executable, version: "test", subscriptionType: "pro" }, {
-                resolveSession: () => ({ cwd: fake.directory, imageStore: store }),
+                resolveSession: () => ({ cwd: fake.directory }),
                 supervise(running, options) {
                     child = running;
                     privateDirectory = dirname(child.spawnargs[child.spawnargs.indexOf("--system-prompt-file") + 1]);
@@ -1809,10 +1781,6 @@ for (const uncertainLiveness of [false, true]) {
                 { type: "image", mimeType: "image/png", data: Buffer.from("failure lease bytes").toString("base64") },
             ] }] }), {
                 async onResponse() {
-                    const images = (await readdir(tmpdir())).filter((name) => name.startsWith("pi-claude-code-provider-images-"));
-                    assert.equal(images.length, 1);
-                    imageDirectory = join(tmpdir(), images[0]);
-                    await store.close();
                     enterObserver();
                     await observer;
                 },
@@ -1827,16 +1795,13 @@ for (const uncertainLiveness of [false, true]) {
             if (uncertainLiveness) {
                 assert.match(result.errorMessage, /process liveness is unknown/);
                 await access(privateDirectory);
-                await access(imageDirectory);
             } else {
                 await assert.rejects(access(privateDirectory));
-                await waitForRemoval(imageDirectory);
             }
         } finally {
             releaseObserver();
-            await store.close();
             // The fixture established actual death before simulating unknown liveness.
-            await Promise.all([fake.directory, privateDirectory, imageDirectory].filter(Boolean).map((directory) => rm(directory, { recursive: true, force: true })));
+            await Promise.all([fake.directory, privateDirectory].filter(Boolean).map((directory) => rm(directory, { recursive: true, force: true })));
         }
     });
 }
@@ -2000,35 +1965,6 @@ process.stdin.on("end", () => {
     finally {
         if (original === undefined) delete process.env.PI_CLAUDE_CODE_PROVIDER_TRANSCRIPT_BREAKPOINT;
         else process.env.PI_CLAUDE_CODE_PROVIDER_TRANSCRIPT_BREAKPOINT = original;
-        await rm(fake.directory, { recursive: true, force: true });
-    }
-});
-test("a request keeps the image store it was placed on when that session shuts down", async () => {
-    // A request whose session id this process never registered borrows another
-    // live session's image store. That session can end while the request is still
-    // preparing, and the lease used to be taken only afterwards, so the borrower
-    // failed on a store it might never write to. onPayload runs in exactly that
-    // window: after the session is resolved, before preparation.
-    const store = new SessionImageStore();
-    store.open();
-    const fake = await fakeClaude(`
-process.stdout.write(JSON.stringify(${JSON.stringify(init)}) + String.fromCharCode(10));
-process.stdout.write(JSON.stringify({type:"result",is_error:false,result:"ok",usage:{}}) + String.fromCharCode(10));`);
-    let closing;
-    try {
-        const result = await settledRequest(createClaudeStream(
-            { executable: fake.executable, version: "test", subscriptionType: "pro" },
-            { resolveSession: () => ({ cwd: tmpdir(), imageStore: store }) },
-        )(model, context, {
-            reasoning: "medium",
-            // Returning nothing leaves Pi's payload alone; the shutdown is the point.
-            onPayload: () => { closing = store.close(); },
-        }));
-        assert.equal(result.stopReason, "stop", result.errorMessage);
-        // Shutdown returns while the lease is held; request settlement releases it.
-        await closing;
-    }
-    finally {
         await rm(fake.directory, { recursive: true, force: true });
     }
 });

@@ -15,7 +15,8 @@ import { createNodeFixture, nodeFixtureArgs } from "../support/node-fixture.js";
 import { waitFor } from "../support/wait.js";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
-const PRIVATE_STATE = ["pi-claude-code-provider-request-", "pi-claude-code-provider-images-"];
+// Images travel inline on stdin, so a request owns only its request directory.
+const PRIVATE_STATE = ["pi-claude-code-provider-request-"];
 
 function pngChunk(type, data) {
   const typeBytes = Buffer.from(type);
@@ -100,7 +101,7 @@ setInterval(() => {}, 1000);
     await waitFor(async () => existsSync(pidPath), `fake Claude launch (${stderr})`);
     claudePid = Number(await readFile(pidPath, "utf8"));
     const during = (await privateState()).filter((name) => !before.includes(name));
-    assert.deepEqual(during.map((name) => PRIVATE_STATE.find((prefix) => name.startsWith(prefix))).sort(), [...PRIVATE_STATE].sort(), "the request did not hold both kinds of private state");
+    assert.deepEqual(during.map((name) => PRIVATE_STATE.find((prefix) => name.startsWith(prefix))).sort(), [...PRIVATE_STATE].sort(), "the request did not hold its private request state");
 
     const result = await exit(child, supervisor, closed);
     assert.equal(result.signal, null, stderr);
@@ -116,7 +117,7 @@ setInterval(() => {}, 1000);
   }
 }
 
-test("closing Pi mid-request reclaims its private request and image state", async (t) => {
+test("closing Pi mid-request reclaims its private request state", async (t) => {
   await exitMidRequest(t, async (child, supervisor, closed) => {
     const shutdown = await closeLiveRpcProcess(child, supervisor, closed, 10_000);
     assert.equal(shutdown.graceful, true);
@@ -124,7 +125,7 @@ test("closing Pi mid-request reclaims its private request and image state", asyn
   });
 });
 
-test("terminating Pi mid-request reclaims its private request and image state", async (t) => {
+test("terminating Pi mid-request reclaims its private request state", async (t) => {
   // Windows has no SIGTERM to deliver: process.kill terminates Pi outright, which
   // no exit listener can observe.
   if (process.platform === "win32") return t.skip("SIGTERM is not a graceful Windows exit");

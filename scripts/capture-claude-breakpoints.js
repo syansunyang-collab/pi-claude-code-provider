@@ -8,9 +8,9 @@
 // provider's own providerArgs and buildClaudeEnvironment, so this follows the
 // provider instead of drifting from a hand-rebuilt copy of it.
 //
-// Two captures are taken with different private request directories but the
-// same session image store. That separates a missing transcript breakpoint
-// from a changing prefix caused by request paths or attachment references.
+// Two captures are taken with different private request directories. That
+// separates a missing transcript breakpoint from a changing prefix caused by
+// request paths.
 // A single capture cannot tell them apart.
 //
 // Like the provider, Claude runs in a project directory rather than the private
@@ -38,7 +38,6 @@ import { claudeExecutable } from "../src/auth.ts";
 import { captureEnvironment, captureTimeout, spawnCaptureChild, stopCaptureChild } from "./lib/claude-capture.js";
 import { providerModels } from "../src/catalog.ts";
 import { providerArgs, thinkingDisplay } from "../src/claude-args.ts";
-import { SessionImageStore } from "../src/session-image-store.ts";
 
 // Anthropic permits four cache breakpoints per request. A fifth is rejected
 // outright, so this is a hard ceiling rather than a quality signal.
@@ -57,14 +56,14 @@ const BLOCKS = [
 ];
 const SYSTEM_PROMPT = "You are an inert cache-shape probe. Answer the current request.";
 const CATALOG = [{ name: "probe", description: "Inert proposal only", inputSchema: { type: "object", properties: {} } }];
-// A 1x1 PNG, enough for the CLI to treat an @-reference as a real attachment.
+// A 1x1 PNG, sent inline after the last record as the provider sends images.
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
   "base64",
 );
 
 function parseOptions(argv) {
-  const options = { model: "sonnet", effort: "low", effortExplicit: false, images: 0, tools: true, marker: true, claude: undefined, output: undefined };
+  const options = { model: "claude-sonnet-5-5", effort: "low", effortExplicit: false, images: 0, tools: true, marker: true, claude: undefined, output: undefined };
   for (let index = 0; index < argv.length; index++) {
     const flag = argv[index];
     const value = () => {
@@ -85,7 +84,7 @@ function parseOptions(argv) {
   }
   if (!Number.isInteger(options.images) || options.images < 0) throw new Error("--images requires a non-negative integer");
   const configured = providerModels().find((model) => model.id === options.model);
-  if (!configured) throw new Error(`Unknown model alias: ${options.model}`);
+  if (!configured) throw new Error(`Unknown model id: ${options.model}`);
   // A model without effort control sends none, as the provider does.
   if (!configured.reasoning) {
     if (options.effortExplicit) throw new Error(`${options.model} does not support --effort`);
@@ -162,28 +161,23 @@ async function snapshotTree(root) {
   return files;
 }
 
-async function captureOnce(options, executable, home, project, imageStore) {
+async function captureOnce(options, executable, home, project) {
   const { server, body, listening, port } = captureServer();
   await listening;
   const baseUrl = `http://127.0.0.1:${port()}`;
   // Mirror the provider: a fresh private request directory holds the system
-  // prompt and catalog, while generated images use session-stable paths.
+  // prompt and catalog; images travel inline after the record naming them.
   const directory = await mkdtemp(join(tmpdir(), "pi-claude-code-provider-request-"));
-  const imageLease = imageStore.acquire();
   let captureProcess;
   try {
     await writeFile(join(directory, "system-prompt.txt"), SYSTEM_PROMPT);
     await writeFile(join(directory, "tools.json"), JSON.stringify(CATALOG));
-    const attachmentPaths = [];
-    for (let index = 0; index < options.images; index++) {
-      const name = `image-${createHash("sha256").update(PNG).digest("hex")}.png`;
-      const path = await imageLease.put(name, PNG);
-      attachmentPaths.push(path);
-    }
+    const image = { type: "image", source: { type: "base64", media_type: "image/png", data: PNG.toString("base64") } };
+    const transcriptImages = BLOCKS.map((_, index) => (index === BLOCKS.length - 1 ? Array.from({ length: options.images }, () => image) : []));
     const prepared = {
       directory,
       systemPromptPath: join(directory, "system-prompt.txt"),
-      attachmentPaths,
+      transcriptImages,
       transcriptBlocks: BLOCKS,
       ...(options.tools
         ? {
@@ -216,7 +210,6 @@ async function captureOnce(options, executable, home, project, imageStore) {
     finally {
       server.closeAllConnections();
       await new Promise((resolve) => server.close(resolve));
-      imageLease.release();
       await rm(directory, { recursive: true, force: true });
     }
   }
@@ -288,9 +281,8 @@ function report(captures, options, startup) {
   const reportedCwd = environment?.match(/Primary working directory: (.*)/)?.[1]?.trim();
   console.log(`project cwd:    ${startup.project}`);
   console.log(`environment:    ${reportedCwd === undefined ? "no working directory reported" : `Primary working directory ${reportedCwd}`}`);
-  // With attachments, Claude Code narrates each read by its private path; that is expected.
-  const privateLeak = captures.some(({ body: captured, directory }) =>
-    options.images > 0 ? (environment ?? "").includes(directory) : JSON.stringify(captured).includes(directory));
+  // Images travel inline, so no private path may reach the request at all.
+  const privateLeak = captures.some(({ body: captured, directory }) => JSON.stringify(captured).includes(directory));
   const bridgeNotReady = options.tools && captures.some(({ bridgeReady }) => !bridgeReady);
   console.log(
     `startup:        ${startup.filterProbe ? `git clean filter ${startup.filterRan ? "RAN" : "did not run"}` : "git clean filter probe skipped on Windows"}; ` +
@@ -325,8 +317,6 @@ function report(captures, options, startup) {
 
 const options = parseOptions(process.argv.slice(2));
 const executable = options.claude ?? claudeExecutable();
-const imageStore = new SessionImageStore();
-imageStore.open();
 const home = await mkdtemp(join(tmpdir(), "pi-claude-code-provider-capture-home-"));
 const markerRoot = await mkdtemp(join(tmpdir(), "pi-claude-code-provider-capture-marker-"));
 let captures;
@@ -336,8 +326,8 @@ try {
   fixture = await createProjectFixture(markerRoot);
   const before = await snapshotTree(fixture.project);
   captures = [
-    await captureOnce(options, executable, home, fixture.project, imageStore),
-    await captureOnce(options, executable, home, fixture.project, imageStore),
+    await captureOnce(options, executable, home, fixture.project),
+    await captureOnce(options, executable, home, fixture.project),
   ];
   const after = await snapshotTree(fixture.project);
   startup = {
@@ -347,7 +337,6 @@ try {
     changedFiles: [...new Set([...before.keys(), ...after.keys()])].filter((name) => before.get(name) !== after.get(name)),
   };
 } finally {
-  await imageStore.close();
   // Claude Code can still be writing under its temporary HOME as it exits, which
   // surfaces as ENOTEMPTY here; the captures themselves are already complete.
   await Promise.all([home, markerRoot, fixture?.project].filter(Boolean).map(

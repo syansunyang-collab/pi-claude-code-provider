@@ -138,7 +138,7 @@ test("sole-directory compatibility flag is required for a markerless tool-bearin
         shutdown = pi.handlers.get("session_shutdown")[0];
         const provider = pi.providers.get("pi-claude-code-provider");
         const model = {
-            ...provider.models.find((candidate) => candidate.id === "sonnet"),
+            ...provider.models.find((candidate) => candidate.id === "claude-sonnet-5-5"),
             provider: "pi-claude-code-provider",
             api: "pi-claude-code-provider-headless",
             baseUrl: "pi-claude-code-provider://local",
@@ -184,7 +184,7 @@ test("routes rate-limit warnings to the active Pi UI and launches nothing before
         await piClaudeCodeProvider(pi.api);
         const provider = pi.providers.get("pi-claude-code-provider");
         assert.ok(provider);
-        const configured = provider.models.find((model) => model.id === "sonnet");
+        const configured = provider.models.find((model) => model.id === "claude-sonnet-5-5");
         const model = {
             ...configured,
             provider: "pi-claude-code-provider",
@@ -214,7 +214,7 @@ test("routes rate-limit warnings to the active Pi UI and launches nothing before
         const records = (await readFile(metricsPath, "utf8")).trim().split("\n").map(JSON.parse);
         assert.equal(records.length, 2);
         assert.deepEqual(records.map((record) => record.errorCategory ?? null), ["working_directory", null]);
-        assert.equal(records.every((record) => record.requestedModel === "sonnet"), true);
+        assert.equal(records.every((record) => record.requestedModel === "claude-sonnet-5-5"), true);
     }
     finally {
         if (original.executable === undefined) delete process.env.PI_CLAUDE_CODE_PROVIDER_PATH;
@@ -243,7 +243,7 @@ test("does not report a disabled overage as a rate limit", async () => {
         const pi = fakePi();
         await piClaudeCodeProvider(pi.api);
         const provider = pi.providers.get("pi-claude-code-provider");
-        const configured = provider.models.find((model) => model.id === "sonnet");
+        const configured = provider.models.find((model) => model.id === "claude-sonnet-5-5");
         const model = {
             ...configured,
             provider: "pi-claude-code-provider",
@@ -282,7 +282,7 @@ test("reports a repeated rate-limit warning once per session", async () => {
         const pi = fakePi();
         await piClaudeCodeProvider(pi.api);
         const provider = pi.providers.get("pi-claude-code-provider");
-        const configured = provider.models.find((model) => model.id === "sonnet");
+        const configured = provider.models.find((model) => model.id === "claude-sonnet-5-5");
         const model = {
             ...configured,
             provider: "pi-claude-code-provider",
@@ -324,7 +324,7 @@ test("reports one warning while utilization moves within the displayed percent",
         const pi = fakePi();
         await piClaudeCodeProvider(pi.api);
         const provider = pi.providers.get("pi-claude-code-provider");
-        const configured = provider.models.find((model) => model.id === "sonnet");
+        const configured = provider.models.find((model) => model.id === "claude-sonnet-5-5");
         const model = {
             ...configured,
             provider: "pi-claude-code-provider",
@@ -365,7 +365,7 @@ test("converts fractional weekly utilization to a percentage", async () => {
         await piClaudeCodeProvider(pi.api);
         const provider = pi.providers.get("pi-claude-code-provider");
         assert.ok(provider);
-        const configured = provider.models.find((model) => model.id === "sonnet");
+        const configured = provider.models.find((model) => model.id === "claude-sonnet-5-5");
         const model = {
             ...configured,
             provider: "pi-claude-code-provider",
@@ -623,7 +623,7 @@ test("provider requests run Claude in the current Pi session's directory, never 
         const pi = fakePi();
         await piClaudeCodeProvider(pi.api);
         const provider = pi.providers.get("pi-claude-code-provider");
-        const configured = provider.models.find((model) => model.id === "sonnet");
+        const configured = provider.models.find((model) => model.id === "claude-sonnet-5-5");
         const model = {
             ...configured,
             provider: "pi-claude-code-provider",
@@ -676,7 +676,7 @@ test("parallel sessions each run in their own directory and survive each other's
             const ctx = sessionContext(cwd, { notify() { } });
             pi.handlers.get("session_start")[0]({}, ctx);
             const provider = pi.providers.get("pi-claude-code-provider");
-            const configured = provider.models.find((model) => model.id === "sonnet");
+            const configured = provider.models.find((model) => model.id === "claude-sonnet-5-5");
             return {
                 sessionId: ctx.sessionManager.getSessionId(),
                 shutdown: () => pi.handlers.get("session_shutdown")[0]({}, {}),
@@ -739,7 +739,7 @@ Current working directory: ${worktree}`), await realpath(worktree));
 });
 
 function providerModel(provider) {
-    const configured = provider.models.find((model) => model.id === "sonnet");
+    const configured = provider.models.find((model) => model.id === "claude-sonnet-5-5");
     return {
         ...configured,
         provider: "pi-claude-code-provider",
@@ -797,18 +797,18 @@ test("Pi binding one session twice is not an error", async () => {
 
 test("session shutdown does not wait for a request Pi has not cancelled yet", async () => {
     // Pi emits session_shutdown before it stops the turn, and awaits the handler
-    // with no timeout, so waiting for an image-store lease held Pi open until
-    // Claude finished answering. Shutdown leaves the directory to the request still
-    // writing to it, and that request reclaims it when it finishes.
+    // with no timeout, so waiting for an in-flight request would hold Pi open until
+    // Claude finished answering. The request keeps its private directory and
+    // reclaims it itself when it finishes.
     const { directory, executable } = await createFakeClaude("ok", { searchDelayMs: 300 });
     const sessionCwd = await mkdtemp(join(tmpdir(), "pi-claude-code-provider-quit-"));
     const original = process.env.PI_CLAUDE_CODE_PROVIDER_PATH;
     process.env.PI_CLAUDE_CODE_PROVIDER_PATH = executable;
-    const imageDirectories = async () => (await readdir(tmpdir(), { withFileTypes: true }))
-        .filter((entry) => entry.isDirectory() && entry.name.startsWith("pi-claude-code-provider-images-"))
+    const requestDirectories = async () => (await readdir(tmpdir(), { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory() && entry.name.startsWith("pi-claude-code-provider-request-"))
         .map((entry) => entry.name)
         .sort();
-    const before = await imageDirectories();
+    const before = await requestDirectories();
     let retained;
     try {
         const pi = fakePi();
@@ -831,24 +831,20 @@ test("session shutdown does not wait for a request Pi has not cancelled yet", as
             .streamSimple(providerModel(provider), context, { reasoning: "medium", sessionId: ctx.sessionManager.getSessionId() })
             .result()
             .then((result) => { settled = true; return result; });
-        // Wait for the image to be stored, so a lease is certainly held and there is
-        // a directory whose retention can be observed.
-        await waitFor(async () => (await imageDirectories()).length > before.length, "image-store acquisition");
-        const opened = (await imageDirectories()).filter((name) => !before.includes(name));
-        assert.equal(opened.length, 1, "the request never opened the session image store");
+        // Wait for the request's private directory, so the request is certainly in flight.
+        await waitFor(async () => (await requestDirectories()).length > before.length, "request preparation");
+        const opened = (await requestDirectories()).filter((name) => !before.includes(name));
+        assert.equal(opened.length, 1, "the request never prepared its private directory");
         retained = join(tmpdir(), opened[0]);
         await pi.handlers.get("session_shutdown")[0]({}, {});
         assert.equal(settled, false, "session shutdown waited for the in-flight request");
-        // Retained rather than removed, because the request can still write to it.
+        // Still in use by the request, so shutdown leaves it alone.
         await access(retained);
         const result = await pending;
         assert.equal(result.stopReason, "stop", result.errorMessage);
-        // The request that held the lease reclaims the directory once it finishes.
-        // Nothing else can: session_shutdown has already run, and on Windows there
-        // is no stale-state pass to fall back on. release() does not await the
-        // removal, so poll for it.
+        // The request reclaims its own directory once it finishes.
         await waitForRemoval(retained);
-        await assert.rejects(access(retained), "the session image directory was never reclaimed");
+        await assert.rejects(access(retained), "the request directory was never reclaimed");
     }
     finally {
         if (original === undefined) delete process.env.PI_CLAUDE_CODE_PROVIDER_PATH;
@@ -870,7 +866,7 @@ test("serves Pi-AI API-registry calls, which an extension's own agent loop makes
         await piClaudeCodeProvider(pi.api);
         assert.ok(getApiProvider("pi-claude-code-provider-headless"), "registered when the extension loads");
         const provider = pi.providers.get("pi-claude-code-provider");
-        const configured = provider.models.find((model) => model.id === "sonnet");
+        const configured = provider.models.find((model) => model.id === "claude-sonnet-5-5");
         const model = {
             ...configured,
             provider: "pi-claude-code-provider",

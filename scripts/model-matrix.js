@@ -15,19 +15,22 @@ if (process.env.PI_CLAUDE_CODE_PROVIDER_PAID_TEST_CHILD !== "1") {
 const packageRoot = process.cwd();
 const providerModels = catalogModels();
 const efforts = ["low", "medium", "high", "xhigh", "max"];
-const effortModels = ["sonnet", "opus"];
 const advertisedModels = providerModels.map((model) => model.id);
-assert.deepEqual(Object.keys(EXPECTED_MODEL_FAMILIES), advertisedModels, "compatibility targets must match advertised models");
+// The picker offers full ids (claude-sonnet-5-5); compatibility targets are keyed by alias.
+const aliasOf = (id) => id.split("-")[1];
+const idOf = (alias) => advertisedModels.find((id) => aliasOf(id) === alias);
+assert.deepEqual(Object.keys(EXPECTED_MODEL_FAMILIES), advertisedModels.map(aliasOf), "compatibility targets must match advertised models");
+const effortModels = ["sonnet", "opus"].map(idOf);
 // Fable availability and included quota vary by subscription tier. It is
 // intentionally opt-in and excluded from the blocking gate; the standalone
 // case remains selectable for accounts with Fable access.
-const ungatedModels = new Set(["fable"]);
+const ungatedModels = new Set([idOf("fable")]);
 // A model without effort control runs once at "off" and sends Claude Code no effort.
 const noEffortModels = providerModels.filter((model) => !model.reasoning).map((model) => model.id);
 const mediumOnlyModels = advertisedModels.filter((model) => !effortModels.includes(model) && !noEffortModels.includes(model));
 const coreCases = [
-    { model: "sonnet", effort: "medium" },
-    ...effortModels.flatMap((model) => efforts.map((effort) => ({ model, effort }))).filter(({ model, effort }) => model !== "sonnet" || effort !== "medium"),
+    { model: idOf("sonnet"), effort: "medium" },
+    ...effortModels.flatMap((model) => efforts.map((effort) => ({ model, effort }))).filter(({ model, effort }) => model !== idOf("sonnet") || effort !== "medium"),
     ...noEffortModels.map((model) => ({ model, effort: "off" })),
     ...mediumOnlyModels.filter((model) => !ungatedModels.has(model)).map((model) => ({ model, effort: "medium" })),
 ];
@@ -86,7 +89,7 @@ async function runCase(cwd, model, effort) {
     const message = assistantReply(events, `${model}:${effort}`);
     const text = message.content.filter((block) => block.type === "text").map((block) => block.text).join("").trim();
     assert.match(text, /^OK\.?$/, `${model}:${effort} response text`);
-    assert.match(message.responseModel, EXPECTED_MODEL_FAMILIES[model], `${model}:${effort} resolved model`);
+    assert.match(message.responseModel, EXPECTED_MODEL_FAMILIES[aliasOf(model)], `${model}:${effort} resolved model`);
     const metrics = await waitForMetrics(metricsBefore.length, model, noEffortModels.includes(model) ? "default" : effort);
     const configured = providerModels.find((entry) => entry.id === model);
     assert.equal(metrics.cleanupComplete, true, `${model}:${effort} private-state cleanup`);

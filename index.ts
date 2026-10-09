@@ -16,7 +16,6 @@ import { flushMetricsLog, getLastRequestMetrics, getLastSearchMetrics, getMetric
 import { readProviderPackage } from "./src/package-info.ts";
 import { createClaudeStream } from "./src/provider.ts";
 import { cleanupStaleRuntimeDirectories, createRuntimeDirectory } from "./src/runtime-directories.ts";
-import { SessionImageStore } from "./src/session-image-store.ts";
 import { resolveSession, sessionRegistry } from "./src/session-registry.ts";
 import { WEB_SEARCH_ENV, searchWithClaude, webSearchSetting } from "./src/web-search.ts";
 import type { RateLimitNotice } from "./src/claude-protocol.ts";
@@ -46,7 +45,6 @@ export default async function piClaudeCodeProvider(pi: ExtensionAPI): Promise<vo
   const providerModels = catalogModels();
   const currentPlatform = platformStatus();
   const searchOutputs = createSearchOutputOwner();
-  const imageStore = new SessionImageStore();
   let activeRateLimitNotify: ((notice: RateLimitNotice) => void) | undefined;
   // Sessions are registered process-wide, not in this closure: Pi re-runs this
   // factory for every new, resumed, forked or cloned session, and a host can hold
@@ -92,7 +90,6 @@ export default async function piClaudeCodeProvider(pi: ExtensionAPI): Promise<vo
 
   pi.on("session_start", (_event, ctx) => {
     searchOutputs.open();
-    imageStore.open();
     // Another session reloading clears Pi-AI's registry for every extension in
     // the process, so ownership is re-asserted rather than claimed once.
     serveApiRegistry();
@@ -111,7 +108,6 @@ export default async function piClaudeCodeProvider(pi: ExtensionAPI): Promise<vo
     ownSessionId = ctx.sessionManager.getSessionId();
     sessions.set(ownSessionId, {
       cwd: ctx.cwd,
-      imageStore,
       onRateLimitNotice: (notice) => activeRateLimitNotify?.(notice),
     });
     const platformWarning = startupPlatformWarning(currentPlatform);
@@ -135,7 +131,7 @@ export default async function piClaudeCodeProvider(pi: ExtensionAPI): Promise<vo
     // is withdrawn only once no session is left to serve.
     if (sessions.size === 0) compat?.unregisterApiProviders(PROVIDER);
     try {
-      await Promise.all([searchOutputs.close(), imageStore.close()]);
+      await searchOutputs.close();
     } finally {
       await flushMetricsLog();
     }

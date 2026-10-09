@@ -38,7 +38,7 @@ export async function captureSurfaceCase(executable, { model, effort }, timeoutM
     const systemPromptPath = join(directory, "system-prompt.txt");
     await writeFile(systemPromptPath, "Inert startup and effort capture.");
     const { args, prompt } = providerArgs({
-      directory, systemPromptPath, attachmentPaths: [], transcriptBlocks: ['{"role":"user","content":"Reply OK."}'],
+      directory, systemPromptPath, transcriptBlocks: ['{"role":"user","content":"Reply OK."}'],
     }, model, effort, { thinkingDisplay: thinkingDisplay() });
     await new Promise((resolve, reject) => {
       server.once("error", reject);

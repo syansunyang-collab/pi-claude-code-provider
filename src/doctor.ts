@@ -237,8 +237,8 @@ function webSearchDescription(status: WebSearchStatus | undefined): string {
 function servedContextWindowNote(input: DoctorSummaryInput, metrics: RequestMetrics): string | undefined {
   const served = metrics.servedContextWindow;
   if (typeof served !== "number" || !Number.isFinite(served) || served <= 0) return undefined;
-  const configured = providerModels()
-    .find((model) => model.id === metrics.requestedModel)?.contextWindow;
+  const model = providerModels().find((candidate) => candidate.id === metrics.requestedModel);
+  const configured = model && "contextWindow" in model ? model.contextWindow : undefined;
   if (configured === undefined || configured === served) return undefined;
   return `Context window: ${metrics.requestedModel} served ${served}, configured ${configured}; ` +
     "Pi compacts by the configured value";

@@ -24,7 +24,6 @@ export interface InlineImage {
 
 export interface PreparedRequest {
   directory: string;
-  imageStoreDirectory?: string;
   transcriptBlocks: string[];
   /** Images per transcript block, sent directly after the block whose image_attachment records name them. */
   transcriptImages?: InlineImage[][];

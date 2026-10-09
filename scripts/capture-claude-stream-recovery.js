@@ -202,7 +202,6 @@ async function captureScenario(scenario, executable) {
     const prepared = {
       directory,
       systemPromptPath: join(directory, "system-prompt.txt"),
-      attachmentPaths: [],
       transcriptBlocks: ['{"role":"user","content":"Reply OK."}'],
       catalogPath: join(directory, "tools.json"),
       readyPath: join(directory, "mcp-ready"),
